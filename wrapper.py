@@ -1,11 +1,12 @@
 import os
 import sys
+from _ast import Lambda
 
-import cv2
 import numpy as np
 import torch
-from cytomine import CytomineJobLogger, CytomineJob
-from torchvision import transforms
+from PIL import Image
+from torchvision.transforms import Compose, ToTensor, Normalize, Lambda
+from torch import nn
 from cytomine.models import Job
 from neubiaswg5 import CLASS_PIXCLA
 from neubiaswg5.helpers import get_discipline, NeubiasJob, prepare_data, upload_data, upload_metrics
@@ -15,35 +16,25 @@ from neubiaswg5.helpers.data_upload import imwrite, imread
 from pspnet import PSPNet
 
 
-def normalize(x):
-    return x / 255
+MEAN = [0.78676176, 0.50835603, 0.78414893]
+STD = [0.16071789, 0.24160224, 0.12767686]
 
 
-def predict_img(net, full_img, scale_factor=0.5, out_threshold=0.5):
+def open_image(path):
+    img = Image.open(path)
+    trsfm = Compose([ToTensor(), Normalize(mean=MEAN, std=STD), Lambda(lambda x: x.unsqueeze(0))])
+    return trsfm(img)
+
+
+def predict_img(net, img_path, device, out_threshold=0.5):
     net.eval()
-    height, width, channel = full_img.shape
-    img = cv2.resize(full_img, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_CUBIC)
-    img = np.array(img, dtype=np.float32)
-    img = normalize(img)
-    img = np.transpose(img, axes=[2, 0, 1])
-    x = torch.from_numpy(img).unsqueeze(0)
 
     with torch.no_grad():
-        y = net(x)
-        proba = y.squeeze(0)
-
-        tf = transforms.Compose(
-            [
-                transforms.ToPILImage(),
-                transforms.Resize((height, width)),
-                transforms.ToTensor()
-            ]
-        )
-
-        proba = tf(proba.cpu())
-        mask_np = proba.squeeze().cpu().numpy()
-
-    return mask_np > out_threshold
+        x = open_image(img_path)
+        logits = net(x.to(device))
+        y_pred = nn.Softmax(dim=1)(logits)
+        proba = y_pred.detach().cpu().squeeze(0).numpy()[1, :, :]
+        return proba > out_threshold
 
 
 def load_model(filepath):
@@ -101,15 +92,10 @@ def main(argv):
         # 2. Call the image analysis workflow
         nj.job.update(progress=10, statusComment="Load model...")
         net = load_model("/app/model.pth")
+        device = torch.device("cpu")
 
         for in_image in Monitor(nj, in_images, start=20, end=75, period=0.05, prefix="Apply UNet to input images"):
-            img = imread(in_image.filepath, is_2d=is_2d)
-
-            mask = predict_img(
-                net=net, full_img=img,
-                scale_factor=0.5,  # value used at training
-                out_threshold=nj.parameters.threshold
-            )
+            mask = predict_img(net, in_image.filepath, device="cpu", out_threshold=nj.parameters.threshold)
 
             imwrite(
                 path=os.path.join(out_path, in_image.filename),

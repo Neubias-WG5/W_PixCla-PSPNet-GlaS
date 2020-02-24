@@ -21,8 +21,8 @@ RUN pip install torch==1.4.0+cpu torchvision==0.5.0+cpu -f https://download.pyto
 # --------------------------------------------------------------------------------------------
 # Install scripts and models
 ADD descriptor.json /app/descriptor.json
+RUN cd /app && wget http://www.montefiore.uliege.be/~rmormont/files/2020-02-24T08_06_49.613216_psp_91_0.8756.pth -O model.pth
 ADD pspnet.py /app/pspnet.py
 ADD wrapper.py /app/wrapper.py
-RUN cd /app && wget http://www.montefiore.uliege.be/~rmormont/files/2020-02-06T10_53_54.034099_psp_99_0.0141_0.0165.pth -O model.pth
 
 ENTRYPOINT ["python", "/app/wrapper.py"]

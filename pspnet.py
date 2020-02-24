@@ -24,7 +24,7 @@ class PyramidPool(nn.Module):
         self.features = nn.Sequential(
             nn.AdaptiveAvgPool2d(pool_size),
             nn.Conv2d(in_features, out_features, 1, bias=False),
-            nn.BatchNorm2d(out_features, momentum=.95),
+            nn.BatchNorm2d(out_features),
             nn.ReLU(inplace=True)
         )
 
@@ -36,7 +36,7 @@ class PyramidPool(nn.Module):
 
 class PSPNet(nn.Module):
 
-    def __init__(self, pretrained=True):
+    def __init__(self, pretrained=True, num_classes=2):
         super(PSPNet, self).__init__()
         print("initializing model")
         # init_net=deeplab_resnet.Res_Deeplab()
@@ -51,10 +51,9 @@ class PSPNet(nn.Module):
 
         self.final = nn.Sequential(
             nn.Conv2d(4096, 512, 3, padding=1, bias=False),
-            nn.BatchNorm2d(512, momentum=.95),
+            nn.BatchNorm2d(512),
             nn.ReLU(inplace=True),
-            nn.Dropout(.1),
-            nn.Conv2d(512, 1, 1),
+            nn.Conv2d(512, num_classes, 1),
         )
 
         initialize_weights(self.layer5a, self.layer5b, self.layer5c, self.layer5d, self.final)
@@ -65,7 +64,7 @@ class PSPNet(nn.Module):
         x = self.resnet.conv1(x)
         x = self.resnet.bn1(x)
         x = self.resnet.relu(x)
-        # x = self.resnet.maxpool(x)
+        x = self.resnet.maxpool(x)
         x = self.resnet.layer1(x)
         x = self.resnet.layer2(x)
         x = self.resnet.layer3(x)
@@ -79,4 +78,4 @@ class PSPNet(nn.Module):
             self.layer5d(x),
         ], 1))
 
-        return torch.squeeze(F.sigmoid(F.upsample_bilinear(x, size[2:])))
+        return F.upsample_bilinear(x, size[2:])
